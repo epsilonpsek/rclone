@@ -110,14 +110,14 @@ func init() {
 		NewFs:       NewFs,
 		Options: []fs.Option{{
 			Name: "account",
-			Help: `Account Name / Client ID.
+			Help: `Azure Storage Account Name.
 
-Set this to the Account Name / Client ID in use.
+Set this to the Azure Storage Account Name in use.
 
 Leave blank to use SAS URL or Emulator, otherwise it needs to be set.
 
 If this is blank and if env_auth is set it will be read from the
-environment variable ` + "`AZURE_CLIENT_ID`" + ` if possible.
+environment variable ` + "`AZURE_STORAGE_ACCOUNT_NAME`" + ` if possible.
 `,
 		}, {
 			Name: "env_auth",
@@ -138,6 +138,15 @@ Leave blank if using account/key or Emulator.`,
 		}, {
 			Name: "tenant",
 			Help: `ID of the service principal's tenant. Also called its directory ID.
+
+Set this if using
+- Service principal with client secret
+- Service principal with certificate
+- User with username and password
+`,
+		}, {
+			Name: "client_id",
+			Help: `The ID of the client in use.
 
 Set this if using
 - Service principal with client secret
@@ -212,9 +221,8 @@ Leave blank normally. Needed only if you want to use a service principal instead
 See ["Create an Azure service principal"](https://docs.microsoft.com/en-us/cli/azure/create-an-azure-service-principal-azure-cli) and ["Assign an Azure role for access to blob data"](https://docs.microsoft.com/en-us/azure/storage/common/storage-auth-aad-rbac-cli) pages for more details.
 
 It may be more convenient to put the credentials directly into the
-rclone config file under the ` + "`" + `account` + "`" + `, ` + "`" + `tenant` + "`" + `, ` + "`" + `client_secret` + "`" + `
-keys instead of setting ` + "`" + `service_principal_file` + "`" + `.
-
+rclone config file under the ` + "`client_id`, `tenant` and `client_secret`" + `
+keys instead of setting ` + "`service_principal_file`" + `.
 `,
 			Advanced: true,
 		}, {
@@ -406,6 +414,7 @@ type Options struct {
 	Key                        string               `config:"key"`
 	SASURL                     string               `config:"sas_url"`
 	Tenant                     string               `config:"tenant"`
+	ClientID                   string               `config:"client_id"`
 	ClientSecret               string               `config:"client_secret"`
 	ClientCertificatePath      string               `config:"client_certificate_path"`
 	ClientCertificatePassword  string               `config:"client_certificate_password"`
@@ -699,7 +708,7 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 	case opt.EnvAuth:
 		// Read account from environment if needed
 		if opt.Account == "" {
-			opt.Account, _ = os.LookupEnv("AZURE_CLIENT_ID")
+			opt.Account, _ = os.LookupEnv("AZURE_STORAGE_ACCOUNT_NAME")
 		}
 		// Read credentials from the environment
 		options := azidentity.DefaultAzureCredentialOptions{
@@ -710,13 +719,13 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 			return nil, fmt.Errorf("create azure enviroment credential failed: %w", err)
 		}
 	case opt.UseEmulator:
-		if opt.Account != "" {
+		if opt.Account == "" {
 			opt.Account = emulatorAccount
 		}
 		if opt.Key == "" {
 			opt.Key = emulatorAccountKey
 		}
-		if opt.Endpoint != "" {
+		if opt.Endpoint == "" {
 			opt.Endpoint = emulatorBlobEndpoint
 		}
 		sharedKeyCred, err = service.NewSharedKeyCredential(opt.Account, opt.Key)
@@ -754,16 +763,16 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 			_ = f.cntSVC(containerName)
 			f.isLimited = true
 		}
-	case opt.Account != "" && opt.Tenant != "" && opt.ClientSecret != "":
+	case opt.ClientID != "" && opt.Tenant != "" && opt.ClientSecret != "":
 		// Service principal with client secret
 		options := azidentity.ClientSecretCredentialOptions{
 			ClientOptions: policyClientOptions,
 		}
-		cred, err = azidentity.NewClientSecretCredential(opt.Tenant, opt.Account, opt.ClientSecret, &options)
+		cred, err = azidentity.NewClientSecretCredential(opt.Tenant, opt.ClientID, opt.ClientSecret, &options)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a client secret credential: %w", err)
 		}
-	case opt.Account != "" && opt.Tenant != "" && opt.ClientCertificatePath != "":
+	case opt.ClientID != "" && opt.Tenant != "" && opt.ClientCertificatePath != "":
 		// Service principal with certificate
 		//
 		// Read the certificate
@@ -794,12 +803,12 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 			SendCertificateChain: opt.ClientSendCertificateChain,
 		}
 		cred, err = azidentity.NewClientCertificateCredential(
-			opt.Tenant, opt.Account, certs, key, &options,
+			opt.Tenant, opt.ClientID, certs, key, &options,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("create azure service principal with client certificate credential failed: %w", err)
 		}
-	case opt.Account != "" && opt.Tenant != "" && opt.Username != "" && opt.Password != "":
+	case opt.ClientID != "" && opt.Tenant != "" && opt.Username != "" && opt.Password != "":
 		// User with username and password
 		options := azidentity.UsernamePasswordCredentialOptions{
 			ClientOptions: policyClientOptions,
@@ -809,7 +818,7 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 			return nil, fmt.Errorf("user password decode failed - did you obscure it?: %w", err)
 		}
 		cred, err = azidentity.NewUsernamePasswordCredential(
-			opt.Tenant, opt.Account, opt.Username, password, &options,
+			opt.Tenant, opt.ClientID, opt.Username, password, &options,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("authenticate user with password failed: %w", err)
@@ -866,7 +875,7 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 			}
 			u, err := url.Parse(fmt.Sprintf("https://%s.%s", opt.Account, storageDefaultBaseURL))
 			if err != nil {
-				return nil, fmt.Errorf("failed to make azure storage URL from account and endpoint: %w", err)
+				return nil, fmt.Errorf("failed to make azure storage URL from account: %w", err)
 			}
 			opt.Endpoint = u.String()
 		}

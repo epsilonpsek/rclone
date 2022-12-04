@@ -230,7 +230,7 @@ untrusted environment such as a CI build server.
 If these variables are set, rclone will authenticate with a service principal with a client secret.
 
 - `tenant`: ID of the service principal's tenant. Also called its "directory" ID.
-- `account`: the service principal's client ID
+- `client_id`: the service principal's client ID
 - `client_secret`: one of the service principal's client secrets
 
 The credentials can also be placed in a file using the
@@ -241,7 +241,7 @@ The credentials can also be placed in a file using the
 If these variables are set, rclone will authenticate with a service principal with certificate.
 
 - `tenant`: ID of the service principal's tenant. Also called its "directory" ID.
-- `account`: the service principal's client ID
+- `client_id`: the service principal's client ID
 - `client_certificate_path`: path to a PEM or PKCS12 certificate file including the private key.
 - `client_certificate_password`: (optional) password for the certificate file.
 - `client_send_certificate_chain`: (optional) Specifies whether an authentication request will include an x5c header to support subject name / issuer based authentication. When set to "true" or "1", authentication requests include the x5c header.
@@ -253,7 +253,7 @@ If these variables are set, rclone will authenticate with a service principal wi
 If these variables are set, rclone will authenticate with username and password.
 
 - `tenant`: (optional) tenant to authenticate in. Defaults to "organizations".
-- `account`: client ID of the application the user will authenticate to
+- `client_id`: client ID of the application the user will authenticate to
 - `username`: a username (usually an email address)
 - `password`: the user's password
 
@@ -286,14 +286,14 @@ Here are the Standard options specific to azureblob (Microsoft Azure Blob Storag
 
 #### --azureblob-account
 
-Account Name / Client ID.
+Azure Storage Account Name.
 
-Set this to the Account Name / Client ID in use.
+Set this to the Azure Storage Account Name in use.
 
 Leave blank to use SAS URL or Emulator, otherwise it needs to be set.
 
 If this is blank and if env_auth is set it will be read from the
-environment variable `AZURE_CLIENT_ID` if possible.
+environment variable `AZURE_STORAGE_ACCOUNT_NAME` if possible.
 
 
 Properties:
@@ -356,6 +356,23 @@ Properties:
 
 - Config:      tenant
 - Env Var:     RCLONE_AZUREBLOB_TENANT
+- Type:        string
+- Required:    false
+
+#### --azureblob-client-id
+
+The ID of the client in use.
+
+Set this if using
+- Service principal with client secret
+- Service principal with certificate
+- User with username and password
+
+
+Properties:
+
+- Config:      client_id
+- Env Var:     RCLONE_AZUREBLOB_CLIENT_ID
 - Type:        string
 - Required:    false
 
@@ -477,9 +494,8 @@ Leave blank normally. Needed only if you want to use a service principal instead
 See ["Create an Azure service principal"](https://docs.microsoft.com/en-us/cli/azure/create-an-azure-service-principal-azure-cli) and ["Assign an Azure role for access to blob data"](https://docs.microsoft.com/en-us/azure/storage/common/storage-auth-aad-rbac-cli) pages for more details.
 
 It may be more convenient to put the credentials directly into the
-rclone config file under the `account`, `tenant`, `client_secret`
+rclone config file under the `client_id`, `tenant` and `client_secret`
 keys instead of setting `service_principal_file`.
-
 
 
 Properties:
